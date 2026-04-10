@@ -3,12 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NetMetrics | Speed Test</title>
+    <title>NetMetrics | Speed Test Pro</title>
     <style>
         :root {
             --bg-color: #0f172a;
             --surface-color: #1e293b;
             --accent-color: #38bdf8;
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+            --error-color: #ef4444;
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
         }
@@ -21,14 +24,14 @@
         }
 
         body {
-            background-color: var(--bg-color);
+            background: linear-gradient(135deg, var(--bg-color) 0%, #1a1f35 100%);
             color: var(--text-main);
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
-            overflow: hidden;
+            padding: 20px;
         }
 
         .container {
@@ -37,8 +40,8 @@
             border-radius: 24px;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
             text-align: center;
-            width: 90%;
-            max-width: 400px;
+            width: 100%;
+            max-width: 450px;
             display: flex;
             flex-direction: column;
             gap: 2rem;
@@ -57,7 +60,7 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 200px;
+            height: 220px;
         }
 
         .speed-value {
@@ -82,6 +85,40 @@
             letter-spacing: 0.1em;
             color: var(--text-muted);
             height: 20px;
+            transition: color 0.3s ease;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 1rem;
+            margin-top: 1rem;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        .metrics.active {
+            opacity: 1;
+        }
+
+        .metric-card {
+            background-color: rgba(56, 189, 248, 0.1);
+            padding: 1rem;
+            border-radius: 12px;
+            border: 1px solid rgba(56, 189, 248, 0.2);
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent-color);
         }
 
         .btn {
@@ -97,12 +134,12 @@
             width: 100%;
         }
 
-        .btn:hover {
+        .btn:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 10px 15px -3px rgba(56, 189, 248, 0.4);
         }
 
-        .btn:active {
+        .btn:active:not(:disabled) {
             transform: translateY(0);
         }
 
@@ -133,32 +170,67 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 2rem 1.5rem;
+            }
+
+            .speed-value {
+                font-size: 3.5rem;
+            }
+
+            .metrics {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <h1>NetMetrics</h1>
+        <h1>NetMetrics Pro</h1>
         
         <div class="display">
             <div class="loader" id="loader"></div>
             <div class="speed-value" id="speed-value">0.0</div>
-            <div class="unit">Mbps</div>
+            <div class="unit" id="unit">Mbps</div>
         </div>
 
         <div class="status" id="status">Esperando inicio...</div>
+
+        <div class="metrics" id="metrics">
+            <div class="metric-card">
+                <div class="metric-label">Descarga</div>
+                <div class="metric-value" id="download-value">—</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Subida</div>
+                <div class="metric-value" id="upload-value">—</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Ping</div>
+                <div class="metric-value" id="ping-value">—</div>
+            </div>
+        </div>
 
         <button class="btn" id="start-btn">Iniciar Prueba</button>
     </div>
 
     <script>
-        class NetworkAnalyzer {
+        class NetworkAnalyzerPro {
             constructor(uiElements) {
                 this.ui = uiElements;
                 this.isTesting = false;
+                this.results = {
+                    download: 0,
+                    upload: 0,
+                    ping: 0
+                };
                 
+                // Payload de prueba (8MB desde Wikimedia)
                 this.testPayloadUrl = "https://upload.wikimedia.org/wikipedia/commons/3/3e/Tokyo_Sky_Tree_2012.JPG";
-                this.payloadSizeBytes = 8192000; 
+                this.payloadSizeBytes = 8192000;
                 this.iterations = 3;
             }
 
@@ -169,33 +241,65 @@
             async runDiagnostics() {
                 if (this.isTesting) return;
 
-                this.setUIState(true, "Conectando...");
-                let totalSpeed = 0;
-
+                this.setUIState(true, "Iniciando prueba...");
+                
                 try {
-                    for (let i = 0; i < this.iterations; i++) {
-                        this.ui.status.textContent = `Analizando... (${i + 1}/${this.iterations})`;
-                        const speed = await this.measureDownload();
-                        totalSpeed += speed;
-                        this.ui.speedValue.textContent = speed.toFixed(1);
-                    }
-
-                    const averageSpeed = totalSpeed / this.iterations;
-                    this.finalizeTest(averageSpeed);
+                    // Medir ping primero
+                    await this.measurePing();
+                    
+                    // Medir descarga
+                    await this.measureDownloadSpeed();
+                    
+                    // Medir subida
+                    await this.measureUploadSpeed();
+                    
+                    this.finalizeTest();
 
                 } catch (error) {
                     this.handleError(error);
                 }
             }
 
-            measureDownload() {
+            async measurePing() {
+                this.ui.status.textContent = "Midiendo latencia...";
+                let totalPing = 0;
+
+                for (let i = 0; i < 3; i++) {
+                    const start = performance.now();
+                    try {
+                        await fetch('https://httpbin.org/get', { mode: 'no-cors' });
+                    } catch (e) {}
+                    const end = performance.now();
+                    totalPing += (end - start);
+                }
+
+                this.results.ping = (totalPing / 3).toFixed(0);
+                this.ui.pingValue.textContent = this.results.ping + " ms";
+            }
+
+            async measureDownloadSpeed() {
+                this.ui.status.textContent = "Midiendo descarga...";
+                let totalSpeed = 0;
+
+                for (let i = 0; i < this.iterations; i++) {
+                    this.ui.status.textContent = `Descarga (${i + 1}/${this.iterations})...`;
+                    const speed = await this.downloadTest();
+                    totalSpeed += speed;
+                    this.ui.speedValue.textContent = speed.toFixed(1);
+                }
+
+                this.results.download = (totalSpeed / this.iterations).toFixed(1);
+                this.ui.downloadValue.textContent = this.results.download + " Mbps";
+            }
+
+            downloadTest() {
                 return new Promise((resolve, reject) => {
                     const cacheBuster = `?t=${new Date().getTime()}`;
                     const downloadImage = new Image();
                     let startTime, endTime;
 
                     downloadImage.onload = () => {
-                        endTime = new Date().getTime();
+                        endTime = performance.now();
                         const durationInSeconds = (endTime - startTime) / 1000;
                         const bitsLoaded = this.payloadSizeBytes * 8;
                         const speedBps = bitsLoaded / durationInSeconds;
@@ -204,11 +308,47 @@
                     };
 
                     downloadImage.onerror = () => {
-                        reject(new Error("Fallo en la resolución del host o descarga interrumpida."));
+                        reject(new Error("Fallo en descarga"));
                     };
 
-                    startTime = new Date().getTime();
+                    startTime = performance.now();
                     downloadImage.src = this.testPayloadUrl + cacheBuster;
+                });
+            }
+
+            async measureUploadSpeed() {
+                this.ui.status.textContent = "Midiendo subida...";
+                let totalSpeed = 0;
+
+                for (let i = 0; i < this.iterations; i++) {
+                    this.ui.status.textContent = `Subida (${i + 1}/${this.iterations})...`;
+                    const speed = await this.uploadTest();
+                    totalSpeed += speed;
+                }
+
+                this.results.upload = (totalSpeed / this.iterations).toFixed(1);
+                this.ui.uploadValue.textContent = this.results.upload + " Mbps";
+            }
+
+            uploadTest() {
+                return new Promise((resolve, reject) => {
+                    const startTime = performance.now();
+                    const blob = new Blob([new ArrayBuffer(1000000)]); // 1MB
+
+                    fetch('https://httpbin.org/post', {
+                        method: 'POST',
+                        body: blob,
+                        mode: 'no-cors'
+                    })
+                    .then(() => {
+                        const endTime = performance.now();
+                        const durationInSeconds = (endTime - startTime) / 1000;
+                        const bitsLoaded = 1000000 * 8;
+                        const speedBps = bitsLoaded / durationInSeconds;
+                        const speedMbps = speedBps / (1024 * 1024);
+                        resolve(speedMbps);
+                    })
+                    .catch(reject);
                 });
             }
 
@@ -223,16 +363,17 @@
                 }
             }
 
-            finalizeTest(averageSpeed) {
-                this.setUIState(false, "Prueba completada");
-                this.ui.speedValue.textContent = averageSpeed.toFixed(1);
+            finalizeTest() {
+                this.setUIState(false, "✓ Prueba completada");
+                this.ui.speedValue.textContent = this.results.download;
                 this.ui.speedValue.style.color = "var(--accent-color)";
+                this.ui.metrics.classList.add('active');
             }
 
             handleError(error) {
-                this.setUIState(false, "Error de conexión");
+                this.setUIState(false, "✗ Error de conexión");
                 this.ui.speedValue.textContent = "ERR";
-                this.ui.speedValue.style.color = "#ef4444";
+                this.ui.speedValue.style.color = "var(--error-color)";
                 console.error(error);
             }
         }
@@ -242,10 +383,14 @@
                 speedValue: document.getElementById('speed-value'),
                 status: document.getElementById('status'),
                 startBtn: document.getElementById('start-btn'),
-                loader: document.getElementById('loader')
+                loader: document.getElementById('loader'),
+                downloadValue: document.getElementById('download-value'),
+                uploadValue: document.getElementById('upload-value'),
+                pingValue: document.getElementById('ping-value'),
+                metrics: document.getElementById('metrics')
             };
 
-            const analyzer = new NetworkAnalyzer(uiElements);
+            const analyzer = new NetworkAnalyzerPro(uiElements);
             analyzer.init();
         });
     </script>
